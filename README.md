@@ -12,19 +12,22 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - **Audit Trail**: Comprehensive logging for regulatory compliance
 - **Multi-Provider Support**: OpenAI, Anthropic, Google, OpenRouter, and local models
 
-### LLM Provider Support
-- **OpenAI**: GPT-4, GPT-4 Turbo, GPT-3.5 Turbo
-- **Anthropic**: Claude 3 Opus, Sonnet, Haiku
-- **Google**: Gemini Pro, Gemini 1.5 Pro
-- **OpenRouter**: Access to 100+ models including open source
-- **Local Models**: Ollama integration with 27+ local models
-- **Fallback**: Mock generation for testing and development
+### LLM Provider Support (2025 Models)
+- **OpenAI**: GPT-5, GPT-5 Mini/Nano, GPT-4o, GPT-Realtime (speech-to-speech)
+- **Anthropic**: Claude Opus 4.1, Claude Sonnet 4 (1M context), Claude 3.5 series
+- **Google**: Gemini 2.5 Pro/Flash/Flash-Lite (1M+ context, multimodal)
+- **Local Models**: Dynamic Ollama integration (Llama 3.3, Qwen 2.5/3, DeepSeek-R1, Mistral Small 3)
+- **Smart Routing**: Automatic provider selection with cost optimization
+- **Fallback**: Multi-tier fallback with local model support
 
-### Technology Stack
-- **DSPy**: Language model programming framework for intelligent data generation
+### Technology Stack (2025 Latest)
+- **FastAPI 0.116+**: High-performance async web framework
 - **FastMCP**: High-performance MCP server implementation
-- **Pydantic**: Type-safe data validation and serialization
-- **SQLite**: Embedded database for audit trails and caching
+- **Pydantic 2.11+**: Type-safe data validation with enhanced performance
+- **SQLAlchemy 2.0+**: Modern async ORM with type safety
+- **DSPy**: Language model programming framework for intelligent data generation
+- **NumPy 2.3+ & Pandas 2.3+**: Advanced data processing capabilities
+- **Redis & DiskCache**: Multi-tier caching for cost optimization
 - **Rich**: Beautiful terminal interfaces and progress indicators
 
 ## 🎯 Enterprise Benefits

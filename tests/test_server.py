@@ -6,9 +6,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Dict, Any, List
 
-from synthetic_data_mcp.server import app
-from synthetic_data_mcp.schemas.base import GenerateSyntheticDatasetRequest, ValidateComplianceRequest
-from synthetic_data_mcp.schemas.healthcare import HealthcareDatasetRequest
+from synthetic_data_mcp.server import (
+    app,
+    GenerateSyntheticDatasetRequest, 
+    ValidateDatasetComplianceRequest
+)
 
 
 class TestMCPServer:

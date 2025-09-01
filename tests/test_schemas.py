@@ -8,11 +8,13 @@ from typing import Dict, Any
 from pydantic import ValidationError
 
 from synthetic_data_mcp.schemas.base import (
-    BaseRecord, 
+    BaseRecord
+)
+from synthetic_data_mcp.server import (
     GenerateSyntheticDatasetRequest,
-    ValidateComplianceRequest,
-    PrivacyConfig,
-    ComplianceConfig
+    ValidateDatasetComplianceRequest,
+    AnalyzePrivacyRiskRequest,
+    GenerateDomainSchemaRequest
 )
 from synthetic_data_mcp.schemas.healthcare import (
     PatientRecord,
@@ -21,14 +23,11 @@ from synthetic_data_mcp.schemas.healthcare import (
     Encounter,
     HealthcareClaim,
     ClinicalTrial,
-    HealthcareDatasetRequest
 )
 from synthetic_data_mcp.schemas.finance import (
     Transaction,
-    TransactionLocation,
     CreditRecord,
-    TradingData,
-    FinanceDatasetRequest
+    TradingData
 )
 
 

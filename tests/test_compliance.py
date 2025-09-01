@@ -10,8 +10,7 @@ from synthetic_data_mcp.compliance.validator import (
     ComplianceValidator,
     HIPAAValidator,
     PCIDSSValidator,
-    SOXValidator,
-    GDPRValidator
+    SOXValidator
 )
 
 

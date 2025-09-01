@@ -37,7 +37,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Database setup
 Base = declarative_base()
-engine = create_engine("postgresql://localhost/synthetic_auth")
+engine = create_engine("sqlite:///synthetic_auth.db")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Redis for rate limiting and session management
@@ -76,7 +76,7 @@ class APIKey(Base):
     expires_at = Column(DateTime)
     last_used = Column(DateTime)
     is_active = Column(Boolean, default=True)
-    metadata = Column(JSON, default=dict)
+    api_metadata = Column(JSON, default=dict)
 
 
 class TokenData(BaseModel):

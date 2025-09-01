@@ -25,6 +25,11 @@ from .schemas.base import DataDomain, OutputFormat
 from .validation.statistical import StatisticalValidator
 from .utils.audit import AuditTrail
 
+# Import database components
+from .database.manager import DatabaseManager, DatabaseType, DatabaseRole, database_manager
+from .database.migrations import MigrationManager, MigrationStatus
+from .database.schema_inspector import SchemaInspector
+
 
 class GenerateSyntheticDatasetRequest(BaseModel):
     """Request model for generating synthetic datasets."""
@@ -75,6 +80,81 @@ class BenchmarkSyntheticDataRequest(BaseModel):
     metrics: Optional[List[str]] = Field(description="Custom evaluation metrics", default=None)
 
 
+# Database management request models
+class AddDatabaseConnectionRequest(BaseModel):
+    """Request model for adding database connection."""
+    
+    name: str = Field(description="Unique database connection name")
+    db_type: str = Field(description="Database type (postgresql, mysql, mongodb, redis, bigquery, snowflake, redshift)")
+    config: Dict[str, Any] = Field(description="Database connection configuration")
+    role: str = Field(description="Database role (primary, replica, cache, analytics, archive)", default="primary")
+    auto_connect: bool = Field(description="Connect immediately after adding", default=True)
+
+
+class ExecuteDatabaseQueryRequest(BaseModel):
+    """Request model for executing database queries."""
+    
+    query: str = Field(description="SQL or database-specific query")
+    parameters: Optional[Dict[str, Any]] = Field(description="Query parameters", default=None)
+    database: Optional[str] = Field(description="Specific database connection name", default=None)
+    role: Optional[str] = Field(description="Database role to use", default=None)
+
+
+class CreateTableRequest(BaseModel):
+    """Request model for creating tables."""
+    
+    table_name: str = Field(description="Name of table to create")
+    schema: Dict[str, Any] = Field(description="Table schema definition")
+    database: Optional[str] = Field(description="Target database connection", default=None)
+    role: Optional[str] = Field(description="Database role to use", default=None)
+
+
+class InsertDataRequest(BaseModel):
+    """Request model for bulk data insertion."""
+    
+    table_name: str = Field(description="Target table name")
+    data: List[Dict[str, Any]] = Field(description="Data records to insert")
+    database: Optional[str] = Field(description="Target database connection", default=None)
+    role: Optional[str] = Field(description="Database role to use", default=None)
+
+
+class CreateMigrationRequest(BaseModel):
+    """Request model for creating database migrations."""
+    
+    name: str = Field(description="Migration name")
+    description: str = Field(description="Migration description")
+    source_db_type: str = Field(description="Source database type")
+    target_db_type: str = Field(description="Target database type")
+    up_sql: str = Field(description="SQL to apply migration")
+    down_sql: str = Field(description="SQL to rollback migration", default="")
+    data_transformations: Optional[List[Dict[str, Any]]] = Field(description="Data transformation rules", default=None)
+    dependencies: Optional[List[str]] = Field(description="Migration dependencies", default=None)
+
+
+class ExecuteMigrationRequest(BaseModel):
+    """Request model for executing migrations."""
+    
+    migration_id: str = Field(description="Migration ID to execute")
+    source_db: str = Field(description="Source database connection name")
+    target_db: str = Field(description="Target database connection name")
+
+
+class SchemaAnalysisRequest(BaseModel):
+    """Request model for schema analysis."""
+    
+    database: str = Field(description="Database connection name to analyze")
+    deep_analysis: bool = Field(description="Perform deep analysis", default=True)
+    sample_size: int = Field(description="Sample size for analysis", default=1000)
+
+
+class CompareSchemaRequest(BaseModel):
+    """Request model for schema comparison."""
+    
+    database1: str = Field(description="First database to compare")
+    database2: str = Field(description="Second database to compare")
+    table_name: Optional[str] = Field(description="Specific table to compare", default=None)
+
+
 # Initialize FastMCP server
 app = FastMCP("synthetic-data-mcp", version="0.1.0")
 
@@ -84,6 +164,11 @@ compliance_validator = ComplianceValidator()
 privacy_engine = PrivacyEngine()
 statistical_validator = StatisticalValidator()
 audit_trail = AuditTrail()
+
+# Initialize database components
+db_manager = database_manager  # Use singleton instance
+migration_manager = MigrationManager(db_manager)
+schema_inspector = SchemaInspector(db_manager)
 
 # Configure logging
 logger.remove()  # Remove default handler
@@ -462,6 +547,561 @@ async def benchmark_synthetic_data(
         
     except Exception as e:
         logger.error(f"Error benchmarking synthetic data: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# Database Management Tools
+
+@app.tool()
+async def add_database_connection(request: AddDatabaseConnectionRequest) -> Dict[str, Any]:
+    """
+    Add a new database connection to the system.
+    
+    Supports PostgreSQL, MySQL, MongoDB, Redis, BigQuery, Snowflake, and Redshift.
+    
+    Args:
+        request: Database connection configuration
+        
+    Returns:
+        Connection status and details
+    """
+    try:
+        logger.info(f"Adding database connection: {request.name} ({request.db_type})")
+        
+        # Map string to enum
+        try:
+            db_type_enum = DatabaseType(request.db_type.lower())
+            role_enum = DatabaseRole(request.role.lower())
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": f"Invalid database type or role: {str(e)}",
+                "supported_types": [t.value for t in DatabaseType],
+                "supported_roles": [r.value for r in DatabaseRole]
+            }
+        
+        # Add database connection
+        success = await db_manager.add_database(
+            name=request.name,
+            db_type=db_type_enum,
+            config=request.config,
+            role=role_enum,
+            auto_connect=request.auto_connect
+        )
+        
+        if success:
+            # Get connection info
+            db_info = db_manager.get_database_info()
+            
+            return {
+                "success": True,
+                "database_name": request.name,
+                "database_type": request.db_type,
+                "role": request.role,
+                "connected": request.auto_connect,
+                "total_databases": db_info["total_databases"],
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Failed to add database connection: {request.name}",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error adding database connection: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def execute_database_query(request: ExecuteDatabaseQueryRequest) -> Dict[str, Any]:
+    """
+    Execute a database query with intelligent database selection.
+    
+    Args:
+        request: Query execution configuration
+        
+    Returns:
+        Query results with performance metrics
+    """
+    try:
+        logger.info(f"Executing database query on {request.database or 'auto-selected'} database")
+        
+        # Map role string to enum if provided
+        role_enum = None
+        if request.role:
+            try:
+                role_enum = DatabaseRole(request.role.lower())
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid database role: {request.role}",
+                    "supported_roles": [r.value for r in DatabaseRole]
+                }
+        
+        # Execute query
+        result = await db_manager.execute_query(
+            query=request.query,
+            parameters=request.parameters,
+            database=request.database,
+            role=role_enum
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error executing database query: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def create_database_table(request: CreateTableRequest) -> Dict[str, Any]:
+    """
+    Create a table in the specified database(s).
+    
+    Args:
+        request: Table creation configuration
+        
+    Returns:
+        Table creation results
+    """
+    try:
+        logger.info(f"Creating table: {request.table_name}")
+        
+        # Map role string to enum if provided
+        role_enum = None
+        if request.role:
+            try:
+                role_enum = DatabaseRole(request.role.lower())
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid database role: {request.role}",
+                    "supported_roles": [r.value for r in DatabaseRole]
+                }
+        
+        # Create table
+        result = await db_manager.create_table(
+            table_name=request.table_name,
+            schema=request.schema,
+            database=request.database,
+            role=role_enum
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error creating database table: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def insert_database_data(request: InsertDataRequest) -> Dict[str, Any]:
+    """
+    Insert data into a database table with bulk optimization.
+    
+    Args:
+        request: Data insertion configuration
+        
+    Returns:
+        Insertion results with performance metrics
+    """
+    try:
+        logger.info(f"Inserting {len(request.data)} records into {request.table_name}")
+        
+        # Map role string to enum if provided
+        role_enum = None
+        if request.role:
+            try:
+                role_enum = DatabaseRole(request.role.lower())
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": f"Invalid database role: {request.role}",
+                    "supported_roles": [r.value for r in DatabaseRole]
+                }
+        
+        # Insert data
+        result = await db_manager.insert_bulk(
+            table_name=request.table_name,
+            data=request.data,
+            database=request.database,
+            role=role_enum
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error inserting database data: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def get_database_health() -> Dict[str, Any]:
+    """
+    Get comprehensive health status of all database connections.
+    
+    Returns:
+        Database health report with performance metrics
+    """
+    try:
+        logger.info("Performing database health check")
+        
+        health_results = await db_manager.health_check_all()
+        performance_metrics = await db_manager.get_performance_metrics()
+        
+        return {
+            "success": True,
+            "health_status": health_results,
+            "performance_metrics": performance_metrics,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking database health: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def get_database_info() -> Dict[str, Any]:
+    """
+    Get information about all managed database connections.
+    
+    Returns:
+        Database configuration and status information
+    """
+    try:
+        db_info = db_manager.get_database_info()
+        return {
+            "success": True,
+            "database_info": db_info,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting database info: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# Database Migration Tools
+
+@app.tool()
+async def create_database_migration(request: CreateMigrationRequest) -> Dict[str, Any]:
+    """
+    Create a new database migration.
+    
+    Args:
+        request: Migration configuration
+        
+    Returns:
+        Migration creation results
+    """
+    try:
+        logger.info(f"Creating migration: {request.name}")
+        
+        # Map database type strings to enums
+        try:
+            source_type = DatabaseType(request.source_db_type.lower())
+            target_type = DatabaseType(request.target_db_type.lower())
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": f"Invalid database type: {str(e)}",
+                "supported_types": [t.value for t in DatabaseType]
+            }
+        
+        # Create migration
+        migration_id = await migration_manager.create_migration(
+            name=request.name,
+            description=request.description,
+            source_db_type=source_type,
+            target_db_type=target_type,
+            up_sql=request.up_sql,
+            down_sql=request.down_sql,
+            data_transformations=request.data_transformations,
+            dependencies=request.dependencies
+        )
+        
+        return {
+            "success": True,
+            "migration_id": migration_id,
+            "name": request.name,
+            "source_type": request.source_db_type,
+            "target_type": request.target_db_type,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating migration: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def execute_database_migration(request: ExecuteMigrationRequest) -> Dict[str, Any]:
+    """
+    Execute a database migration.
+    
+    Args:
+        request: Migration execution configuration
+        
+    Returns:
+        Migration execution results
+    """
+    try:
+        logger.info(f"Executing migration: {request.migration_id}")
+        
+        result = await migration_manager.execute_migration(
+            migration_id=request.migration_id,
+            source_db=request.source_db,
+            target_db=request.target_db
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error executing migration: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def get_migration_status(migration_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get migration status and history.
+    
+    Args:
+        migration_id: Specific migration ID (optional)
+        
+    Returns:
+        Migration status information
+    """
+    try:
+        result = await migration_manager.get_migration_status(migration_id)
+        return {
+            "success": True,
+            "migration_status": result,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting migration status: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def create_sqlite_to_postgresql_migration(
+    sqlite_db: str,
+    postgresql_db: str,
+    migration_name: str = "sqlite_to_postgresql"
+) -> Dict[str, Any]:
+    """
+    Create a migration from SQLite to PostgreSQL.
+    
+    Args:
+        sqlite_db: Source SQLite database connection name
+        postgresql_db: Target PostgreSQL database connection name
+        migration_name: Name for the migration
+        
+    Returns:
+        Migration creation results
+    """
+    try:
+        logger.info(f"Creating SQLite to PostgreSQL migration: {migration_name}")
+        
+        migration_id = await migration_manager.create_sqlite_to_postgresql_migration(
+            sqlite_db=sqlite_db,
+            postgresql_db=postgresql_db,
+            migration_name=migration_name
+        )
+        
+        return {
+            "success": True,
+            "migration_id": migration_id,
+            "migration_name": migration_name,
+            "source_db": sqlite_db,
+            "target_db": postgresql_db,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating SQLite to PostgreSQL migration: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# Database Schema Analysis Tools
+
+@app.tool()
+async def analyze_database_schema(request: SchemaAnalysisRequest) -> Dict[str, Any]:
+    """
+    Perform comprehensive database schema analysis.
+    
+    Args:
+        request: Schema analysis configuration
+        
+    Returns:
+        Detailed schema analysis results
+    """
+    try:
+        logger.info(f"Analyzing schema for database: {request.database}")
+        
+        analysis = await schema_inspector.analyze_database_schema(
+            database=request.database,
+            deep_analysis=request.deep_analysis,
+            sample_size=request.sample_size
+        )
+        
+        return {
+            "success": True,
+            "schema_analysis": {
+                "database_name": analysis.database_name,
+                "database_type": analysis.database_type.value,
+                "total_tables": len(analysis.tables),
+                "total_relationships": len(analysis.relationships),
+                "orphaned_tables": analysis.orphaned_tables,
+                "performance_issues": len(analysis.performance_issues),
+                "data_quality_issues": len(analysis.data_quality_issues),
+                "duplicate_indexes": len(analysis.duplicate_indexes),
+                "analysis_timestamp": analysis.analysis_timestamp,
+                "detailed_results": {
+                    "tables": [
+                        {
+                            "name": table.name,
+                            "row_count": table.row_count,
+                            "column_count": len(table.columns),
+                            "size_bytes": table.size_bytes,
+                            "indexes": len(table.indexes),
+                            "foreign_keys": len(table.foreign_keys)
+                        }
+                        for table in analysis.tables
+                    ],
+                    "relationships": [
+                        {
+                            "parent_table": rel.parent_table,
+                            "child_table": rel.child_table,
+                            "relationship_type": rel.relationship_type
+                        }
+                        for rel in analysis.relationships
+                    ],
+                    "performance_issues": analysis.performance_issues,
+                    "data_quality_issues": analysis.data_quality_issues,
+                    "duplicate_indexes": analysis.duplicate_indexes
+                }
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing database schema: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def compare_database_schemas(request: CompareSchemaRequest) -> Dict[str, Any]:
+    """
+    Compare schemas between two databases.
+    
+    Args:
+        request: Schema comparison configuration
+        
+    Returns:
+        Schema comparison results
+    """
+    try:
+        logger.info(f"Comparing schemas: {request.database1} vs {request.database2}")
+        
+        comparison = await schema_inspector.compare_schemas(
+            database1=request.database1,
+            database2=request.database2,
+            table_name=request.table_name
+        )
+        
+        return {
+            "success": True,
+            "schema_comparison": comparison,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error comparing database schemas: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def get_schema_health_report(database: str) -> Dict[str, Any]:
+    """
+    Generate comprehensive schema health report.
+    
+    Args:
+        database: Database connection name
+        
+    Returns:
+        Schema health report with recommendations
+    """
+    try:
+        logger.info(f"Generating schema health report for: {database}")
+        
+        health_report = await schema_inspector.get_schema_health_report(database)
+        
+        return {
+            "success": True,
+            "health_report": health_report,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating schema health report: {str(e)}")
         return {
             "success": False,
             "error": str(e),

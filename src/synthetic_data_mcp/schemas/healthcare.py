@@ -404,3 +404,18 @@ def is_hipaa_compliant_age_group(age_group: str) -> bool:
         "0-17", "18-24", "25-34", "35-44", "45-54", 
         "55-64", "65-74", "75-84", "85+"
     ]
+
+
+# Schema constants for testing and validation
+HEALTHCARE_SCHEMA = {
+    "domain": "healthcare", 
+    "fields": {
+        "patient_id": {"type": "string", "description": "Unique patient identifier"},
+        "age": {"type": "integer", "description": "Patient age", "min": 0, "max": 120},
+        "gender": {"type": "string", "enum": ["M", "F", "O", "U"]},
+        "diagnosis": {"type": "string", "description": "Primary diagnosis"},
+        "admission_date": {"type": "date", "description": "Hospital admission date"}
+    },
+    "compliance": ["HIPAA", "Safe Harbor"],
+    "privacy_level": "high"
+}

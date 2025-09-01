@@ -8,7 +8,7 @@ compliance validation, and system administration.
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -509,7 +509,7 @@ def audit_report(
     audit_trail = AuditTrail()
     
     end_date = datetime.now()
-    start_date = end_date.replace(day=end_date.day - days)
+    start_date = end_date - timedelta(days=days)
     
     with Progress(
         SpinnerColumn(),

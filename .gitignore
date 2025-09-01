@@ -183,3 +183,53 @@ healthcare_data_sample.json
 ollama_healthcare_sample.json
 *_sample.json
 *_demo.json
+
+# Internal documentation and reports
+GAP_ANALYSIS_*.md
+TEST_COVERAGE_*.md
+TESTING_VALIDATION_*.md
+CONTAINERIZATION_*.md
+DATABASE_ARCHITECTURE_*.md
+coverage_*.json
+final_*.json
+test_functional_*.py
+run_provider_tests.py
+
+# Local databases
+synthetic_auth.db
+*.db
+*.db-journal
+*.db-wal
+
+# Temporary test files
+tests/test_*_coverage.py
+tests/test_*_complete.py
+tests/test_*_focused.py
+tests/test_*_simple.py
+tests/test_basic_*.py
+tests/test_final_*.py
+tests/test_maximum_*.py
+tests/test_provider_*.py
+tests/test_utils_*.py
+tests/test_validation_*.py
+
+# Keep essential test files
+!tests/test_compliance.py
+!tests/test_generator.py
+!tests/test_integration.py
+!tests/test_schemas.py
+!tests/test_server.py
+!tests/test_security.py
+!tests/test_performance.py
+
+# Development artifacts
+.dockerignore
+Dockerfile.dev
+docker-compose.dev.yml
+scripts/dev-entrypoint.sh
+
+# Local configuration examples
+database_config_example.json
+
+# Kubernetes secrets
+k8s/secrets.yaml

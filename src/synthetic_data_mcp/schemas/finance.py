@@ -479,3 +479,18 @@ def generate_credit_score_range(score: int) -> str:
         return "740-799"
     else:
         return "800-850"
+
+
+# Schema constants for testing and validation
+FINANCE_SCHEMA = {
+    "domain": "finance",
+    "fields": {
+        "account_id": {"type": "string", "description": "Unique account identifier"},
+        "customer_id": {"type": "string", "description": "Customer identifier"},
+        "transaction_amount": {"type": "decimal", "description": "Transaction amount"},
+        "transaction_type": {"type": "string", "enum": ["DEPOSIT", "WITHDRAWAL", "TRANSFER", "PAYMENT"]},
+        "transaction_date": {"type": "datetime", "description": "Transaction timestamp"}
+    },
+    "compliance": ["PCI-DSS", "SOX", "GDPR"],
+    "privacy_level": "medium"
+}
