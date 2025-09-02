@@ -3,6 +3,7 @@
 Enterprise-grade Model Context Protocol (MCP) server for generating privacy-compliant synthetic datasets. Built for regulated industries requiring HIPAA, PCI DSS, SOX, and GDPR compliance with multiple LLM provider support.
 
 ## 🚀 Features
+<img align="right" width="300" height="300" alt="synthetic-data-mcp" src="https://github.com/user-attachments/assets/46620579-0933-4d55-82e9-3700c75fe566" />
 
 ### Core Capabilities
 - **Domain-Specific Generation**: Specialized synthetic data for healthcare and finance
