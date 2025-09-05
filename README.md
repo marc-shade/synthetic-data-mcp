@@ -16,7 +16,7 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - **Multi-Provider Support**: Ollama (default), OpenAI, Anthropic, Google, OpenRouter
 
 ### LLM Provider Support (2025 Models)
-- **OpenAI**: GPT-5, GPT-5 Mini/Nano, GPT-4o, GPT-Realtime (speech-to-speech)
+- **OpenAI**: GPT-5, GPT-5 Mini/Nano, GPT-4o
 - **Anthropic**: Claude Opus 4.1, Claude Sonnet 4 (1M context), Claude 3.5 series
 - **Google**: Gemini 2.5 Pro/Flash/Flash-Lite (1M+ context, multimodal)
 - **Local Models**: Dynamic Ollama integration (Llama 3.3, Qwen 2.5/3, DeepSeek-R1, Mistral Small 3)
