@@ -34,10 +34,6 @@ The synthetic-data-mcp platform now supports **the most advanced AI models avail
 - Parallel test-time compute for complex reasoning
 - Unlimited usage for enterprise scenarios
 
-**GPT-Realtime** - Speech-to-speech model
-- Most advanced conversational AI
-- Natural, expressive speech generation
-- Tool calling with precision
 
 **Cost Benefits:**
 - Semantic caching reduces repeated input costs by 90%
