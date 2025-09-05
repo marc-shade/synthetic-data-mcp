@@ -25,6 +25,11 @@ from .schemas.base import DataDomain, OutputFormat
 from .validation.statistical import StatisticalValidator
 from .utils.audit import AuditTrail
 
+# Import ingestion components
+from .ingestion.data_ingestion import DataIngestionPipeline
+from .ingestion.pattern_analyzer import PatternAnalyzer
+from .ingestion.knowledge_loader import DynamicKnowledgeLoader
+
 # Import database components
 from .database.manager import DatabaseManager, DatabaseType, DatabaseRole, database_manager
 from .database.migrations import MigrationManager, MigrationStatus
@@ -155,6 +160,36 @@ class CompareSchemaRequest(BaseModel):
     table_name: Optional[str] = Field(description="Specific table to compare", default=None)
 
 
+class IngestDataRequest(BaseModel):
+    """Request model for ingesting real data to learn patterns."""
+    
+    data: Union[List[Dict[str, Any]], str] = Field(description="Data to ingest (list of records or file path)")
+    format: str = Field(description="Data format (csv, json, excel, auto)", default="auto")
+    domain: str = Field(description="Domain category (healthcare, finance, custom)", default="custom")
+    anonymize: bool = Field(description="Whether to anonymize PII before analysis", default=True)
+    learn_patterns: bool = Field(description="Extract statistical patterns", default=True)
+    sample_size: Optional[int] = Field(description="Sample size for large datasets", default=None)
+
+
+class GenerateFromPatternRequest(BaseModel):
+    """Request model for generating data from learned patterns."""
+    
+    pattern_id: str = Field(description="ID from previous ingestion")
+    record_count: int = Field(description="Number of records to generate", gt=0, le=1000000)
+    variation: float = Field(description="Amount of variation (0.0-1.0)", default=0.3, ge=0.0, le=1.0)
+    privacy_level: PrivacyLevel = Field(description="Privacy protection level", default=PrivacyLevel.BALANCED)
+    preserve_distributions: bool = Field(description="Maintain statistical properties", default=True)
+
+
+class AnonymizeDataRequest(BaseModel):
+    """Request model for anonymizing existing data."""
+    
+    data: Union[List[Dict[str, Any]], str] = Field(description="Data to anonymize (list of records or file path)")
+    privacy_level: PrivacyLevel = Field(description="Level of anonymization", default=PrivacyLevel.HIGH)
+    preserve_relationships: bool = Field(description="Maintain data relationships", default=True)
+    format: str = Field(description="Data format (csv, json, excel, auto)", default="auto")
+
+
 # Initialize FastMCP server
 app = FastMCP("synthetic-data-mcp", version="0.1.0")
 
@@ -164,6 +199,11 @@ compliance_validator = ComplianceValidator()
 privacy_engine = PrivacyEngine()
 statistical_validator = StatisticalValidator()
 audit_trail = AuditTrail()
+
+# Initialize ingestion components
+ingestion_pipeline = DataIngestionPipeline(privacy_engine)
+pattern_analyzer = PatternAnalyzer()
+knowledge_loader = DynamicKnowledgeLoader()
 
 # Initialize database components
 db_manager = database_manager  # Use singleton instance
@@ -547,6 +587,286 @@ async def benchmark_synthetic_data(
         
     except Exception as e:
         logger.error(f"Error benchmarking synthetic data: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# Data Ingestion and Pattern Learning Tools
+
+@app.tool()
+async def ingest_data_samples(request: IngestDataRequest) -> Dict[str, Any]:
+    """
+    Ingest real data samples to learn patterns and structure.
+    
+    This tool allows you to provide existing real data as a model for synthetic generation.
+    The system will analyze the data structure, learn patterns, and optionally anonymize PII.
+    
+    Args:
+        request: IngestDataRequest with data samples and configuration
+        
+    Returns:
+        Dictionary containing:
+        - pattern_id: ID for learned pattern (use for generation)
+        - structure: Detected data structure
+        - statistics: Statistical analysis
+        - privacy_report: PII detection results if anonymization was applied
+    """
+    try:
+        logger.info(f"Ingesting data samples - Format: {request.format}, Domain: {request.domain}")
+        
+        # Load data based on input type
+        if isinstance(request.data, str):
+            # File path provided
+            data_source = request.data
+        else:
+            # Direct data provided
+            data_source = request.data
+            
+        # Ingest and analyze data
+        result = await ingestion_pipeline.ingest(
+            source=data_source,
+            format=request.format,
+            anonymize=request.anonymize,
+            learn_patterns=request.learn_patterns,
+            sample_size=request.sample_size
+        )
+        
+        # If patterns were learned, store them in the generator
+        if result.get("pattern_id") and request.learn_patterns:
+            # Make patterns available to the generator
+            await generator.learn_from_data(
+                data_samples=data_source if isinstance(data_source, list) else result.get("data", []),
+                domain=request.domain
+            )
+            
+        # Log audit trail
+        await audit_trail.log_event(
+            event_type="data_ingestion",
+            metadata={
+                "pattern_id": result.get("pattern_id"),
+                "rows_ingested": result.get("rows_ingested", 0),
+                "domain": request.domain,
+                "anonymized": request.anonymize
+            }
+        )
+        
+        return {
+            "success": True,
+            **result,
+            "message": f"Successfully ingested {result.get('rows_ingested', 0)} records"
+        }
+        
+    except Exception as e:
+        logger.error(f"Data ingestion failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def generate_from_pattern(request: GenerateFromPatternRequest) -> Dict[str, Any]:
+    """
+    Generate synthetic data based on previously learned patterns.
+    
+    Use this after ingesting real data with ingest_data_samples. The system will
+    generate new synthetic records that match the statistical patterns of your data.
+    
+    Args:
+        request: GenerateFromPatternRequest with pattern ID and parameters
+        
+    Returns:
+        Dictionary containing:
+        - synthetic_data: Generated records matching the pattern
+        - validation_report: Comparison with original patterns
+        - metadata: Generation details
+    """
+    try:
+        logger.info(f"Generating from pattern: {request.pattern_id}, Count: {request.record_count}")
+        
+        # Generate using learned patterns
+        result = await generator.generate_from_pattern(
+            pattern_id=request.pattern_id,
+            record_count=request.record_count,
+            variation=request.variation,
+            privacy_level=request.privacy_level
+        )
+        
+        # Apply privacy protection if needed
+        if request.privacy_level != PrivacyLevel.LOW:
+            protected_data = []
+            for record in result.get("data", []):
+                protected_record = await privacy_engine.apply_privacy_protection(
+                    record,
+                    request.privacy_level
+                )
+                protected_data.append(protected_record)
+            result["data"] = protected_data
+            
+        # Validate if distributions are preserved
+        if request.preserve_distributions and result.get("data"):
+            validation_report = await statistical_validator.validate_distribution_preservation(
+                original_pattern_id=request.pattern_id,
+                synthetic_data=result["data"]
+            )
+            result["validation_report"] = validation_report
+            
+        # Log audit trail
+        await audit_trail.log_event(
+            event_type="pattern_generation",
+            metadata={
+                "pattern_id": request.pattern_id,
+                "records_generated": request.record_count,
+                "variation": request.variation,
+                "privacy_level": request.privacy_level.value
+            }
+        )
+        
+        return {
+            "success": True,
+            **result,
+            "message": f"Successfully generated {request.record_count} synthetic records from pattern"
+        }
+        
+    except Exception as e:
+        logger.error(f"Pattern-based generation failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def anonymize_existing_data(request: AnonymizeDataRequest) -> Dict[str, Any]:
+    """
+    Anonymize existing real data while preserving utility.
+    
+    This tool cleans PII from your data while maintaining relationships and
+    statistical properties, making it safe for development and testing.
+    
+    Args:
+        request: AnonymizeDataRequest with data and privacy settings
+        
+    Returns:
+        Dictionary containing:
+        - anonymized_data: Cleaned version of input data
+        - transformation_report: Details of what was changed
+        - privacy_score: Privacy protection level achieved
+    """
+    try:
+        logger.info(f"Anonymizing data - Privacy Level: {request.privacy_level.value}")
+        
+        # Load data based on input type
+        if isinstance(request.data, str):
+            # File path provided
+            data_source = request.data
+        else:
+            # Direct data provided
+            data_source = request.data
+            
+        # Ingest data without learning patterns
+        ingestion_result = await ingestion_pipeline.ingest(
+            source=data_source,
+            format=request.format,
+            anonymize=True,
+            learn_patterns=False
+        )
+        
+        # Get the anonymized data
+        anonymized_data = ingestion_result.get("data", [])
+        
+        # Apply additional privacy protection based on level
+        if request.privacy_level == PrivacyLevel.HIGH:
+            # Apply stronger anonymization
+            protected_data = []
+            for record in anonymized_data:
+                protected_record = await privacy_engine.apply_privacy_protection(
+                    record,
+                    request.privacy_level
+                )
+                protected_data.append(protected_record)
+            anonymized_data = protected_data
+            
+        # Calculate privacy metrics
+        privacy_score = await privacy_engine.calculate_privacy_score(
+            anonymized_data,
+            request.privacy_level
+        )
+        
+        # Log audit trail
+        await audit_trail.log_event(
+            event_type="data_anonymization",
+            metadata={
+                "records_anonymized": len(anonymized_data),
+                "privacy_level": request.privacy_level.value,
+                "privacy_score": privacy_score
+            }
+        )
+        
+        return {
+            "success": True,
+            "anonymized_data": anonymized_data,
+            "transformation_report": ingestion_result.get("pii_report", {}),
+            "privacy_score": privacy_score,
+            "records_processed": len(anonymized_data),
+            "message": f"Successfully anonymized {len(anonymized_data)} records"
+        }
+        
+    except Exception as e:
+        logger.error(f"Data anonymization failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.tool()
+async def list_learned_patterns() -> Dict[str, Any]:
+    """
+    List all previously learned patterns available for generation.
+    
+    Returns:
+        Dictionary containing list of pattern IDs with metadata
+    """
+    try:
+        patterns = []
+        
+        # Get patterns from generator
+        for pattern_id, pattern_info in generator.learned_patterns.items():
+            patterns.append({
+                "pattern_id": pattern_id,
+                "domain": pattern_info.get("domain"),
+                "sample_count": pattern_info.get("sample_count"),
+                "learned_at": pattern_info.get("learned_at", "unknown")
+            })
+            
+        # Get patterns from ingestion pipeline
+        for pattern_id in ingestion_pipeline.list_stored_patterns():
+            if not any(p["pattern_id"] == pattern_id for p in patterns):
+                pattern_data = ingestion_pipeline.get_stored_pattern(pattern_id)
+                if pattern_data:
+                    patterns.append({
+                        "pattern_id": pattern_id,
+                        "domain": pattern_data.get("metadata", {}).get("domain", "unknown"),
+                        "sample_count": pattern_data.get("rows_ingested", 0),
+                        "learned_at": pattern_data.get("metadata", {}).get("ingested_at", "unknown")
+                    })
+                    
+        return {
+            "success": True,
+            "patterns": patterns,
+            "count": len(patterns),
+            "message": f"Found {len(patterns)} learned patterns"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to list patterns: {str(e)}")
         return {
             "success": False,
             "error": str(e),

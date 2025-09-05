@@ -13,10 +13,20 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Type, Union
 from uuid import uuid4
 
-import dspy
+import numpy as np
+import pandas as pd
 from faker import Faker
 from loguru import logger
 from pydantic import BaseModel
+
+# Make dspy optional to avoid dependency conflicts
+try:
+    import dspy
+    USE_DSPY = True
+except (ImportError, AttributeError) as e:
+    logger.warning(f"DSPy not available or has dependency issues: {e}")
+    logger.info("Falling back to non-DSPy generation methods")
+    USE_DSPY = False
 
 from ..schemas.base import DataDomain, PrivacyLevel
 from ..schemas.healthcare import (
@@ -27,43 +37,46 @@ from ..schemas.finance import (
     Transaction, CreditRecord, TradingData,
     CustomerDemographics, TransactionType, TransactionCategory
 )
+from ..ingestion.knowledge_loader import DynamicKnowledgeLoader
+from ..ingestion.pattern_analyzer import PatternAnalyzer
 
 
-class HealthcareDataSignature(dspy.Signature):
-    """DSPy signature for healthcare data generation."""
-    
-    domain_context = dspy.InputField(desc="Healthcare domain context and requirements")
-    data_type = dspy.InputField(desc="Specific healthcare data type to generate")
-    patient_profile = dspy.InputField(desc="Patient demographic and clinical profile")
-    compliance_requirements = dspy.InputField(desc="HIPAA and regulatory compliance requirements")
-    
-    synthetic_record = dspy.OutputField(desc="Generated synthetic healthcare record in JSON format")
-    compliance_notes = dspy.OutputField(desc="Notes on compliance and privacy protection applied")
+if USE_DSPY:
+    class HealthcareDataSignature(dspy.Signature):
+        """DSPy signature for healthcare data generation."""
+        
+        domain_context = dspy.InputField(desc="Healthcare domain context and requirements")
+        data_type = dspy.InputField(desc="Specific healthcare data type to generate")
+        patient_profile = dspy.InputField(desc="Patient demographic and clinical profile")
+        compliance_requirements = dspy.InputField(desc="HIPAA and regulatory compliance requirements")
+        
+        synthetic_record = dspy.OutputField(desc="Generated synthetic healthcare record in JSON format")
+        compliance_notes = dspy.OutputField(desc="Notes on compliance and privacy protection applied")
 
 
-class FinanceDataSignature(dspy.Signature):
-    """DSPy signature for financial data generation."""
-    
-    domain_context = dspy.InputField(desc="Financial domain context and requirements")
-    data_type = dspy.InputField(desc="Specific financial data type to generate")
-    customer_profile = dspy.InputField(desc="Customer demographic and financial profile")
-    compliance_requirements = dspy.InputField(desc="SOX, PCI DSS and regulatory compliance requirements")
-    
-    synthetic_record = dspy.OutputField(desc="Generated synthetic financial record in JSON format")
-    compliance_notes = dspy.OutputField(desc="Notes on compliance and privacy protection applied")
+    class FinanceDataSignature(dspy.Signature):
+        """DSPy signature for financial data generation."""
+        
+        domain_context = dspy.InputField(desc="Financial domain context and requirements")
+        data_type = dspy.InputField(desc="Specific financial data type to generate")
+        customer_profile = dspy.InputField(desc="Customer demographic and financial profile")
+        compliance_requirements = dspy.InputField(desc="SOX, PCI DSS and regulatory compliance requirements")
+        
+        synthetic_record = dspy.OutputField(desc="Generated synthetic financial record in JSON format")
+        compliance_notes = dspy.OutputField(desc="Notes on compliance and privacy protection applied")
 
 
-class SchemaGenerationSignature(dspy.Signature):
-    """DSPy signature for generating domain schemas."""
-    
-    domain = dspy.InputField(desc="Target domain (healthcare, finance, custom)")
-    data_type = dspy.InputField(desc="Specific data structure type")
-    compliance_requirements = dspy.InputField(desc="Required compliance frameworks")
-    existing_schemas = dspy.InputField(desc="Existing schema examples for reference")
-    
-    schema_definition = dspy.OutputField(desc="Generated Pydantic schema definition")
-    validation_rules = dspy.OutputField(desc="Compliance validation rules")
-    field_descriptions = dspy.OutputField(desc="Detailed field descriptions and constraints")
+    class SchemaGenerationSignature(dspy.Signature):
+        """DSPy signature for generating domain schemas."""
+        
+        domain = dspy.InputField(desc="Target domain (healthcare, finance, custom)")
+        data_type = dspy.InputField(desc="Specific data structure type")
+        compliance_requirements = dspy.InputField(desc="Required compliance frameworks")
+        existing_schemas = dspy.InputField(desc="Existing schema examples for reference")
+        
+        schema_definition = dspy.OutputField(desc="Generated Pydantic schema definition")
+        validation_rules = dspy.OutputField(desc="Compliance validation rules")
+        field_descriptions = dspy.OutputField(desc="Detailed field descriptions and constraints")
 
 
 class SyntheticDataGenerator:
@@ -75,18 +88,32 @@ class SyntheticDataGenerator:
         Faker.seed(0)  # For reproducible synthetic data
         
         # Configure DSPy with a language model or fallback
-        self.use_llm = self._configure_dspy()
+        if USE_DSPY:
+            self.use_llm = self._configure_dspy()
+            
+            # Initialize DSPy modules
+            self.healthcare_generator = dspy.ChainOfThought(HealthcareDataSignature)
+            self.finance_generator = dspy.ChainOfThought(FinanceDataSignature)
+            self.schema_generator = dspy.ChainOfThought(SchemaGenerationSignature)
+        else:
+            self.use_llm = False
+            self.healthcare_generator = None
+            self.finance_generator = None
+            self.schema_generator = None
+            logger.info("DSPy disabled - using fallback generation methods")
         
-        # Initialize DSPy modules
-        self.healthcare_generator = dspy.ChainOfThought(HealthcareDataSignature)
-        self.finance_generator = dspy.ChainOfThought(FinanceDataSignature)
-        self.schema_generator = dspy.ChainOfThought(SchemaGenerationSignature)
+        # Initialize dynamic knowledge loader instead of hardcoded knowledge
+        self.knowledge_loader = DynamicKnowledgeLoader()
+        self.pattern_analyzer = PatternAnalyzer()
         
-        # Domain-specific knowledge bases
-        self.healthcare_knowledge = self._load_healthcare_knowledge()
-        self.finance_knowledge = self._load_finance_knowledge()
+        # Pattern storage for learned patterns
+        self.learned_patterns = {}
         
-        logger.info("Synthetic Data Generator initialized successfully")
+        # Load dynamic knowledge (not hardcoded)
+        self.healthcare_knowledge = self.knowledge_loader.get_healthcare_knowledge()
+        self.finance_knowledge = self.knowledge_loader.get_finance_knowledge()
+        
+        logger.info("Synthetic Data Generator initialized with dynamic knowledge loading")
     
     def _configure_dspy(self) -> bool:
         """Configure DSPy with available LM or fallback mode."""
@@ -147,13 +174,14 @@ class SyntheticDataGenerator:
                     response = client.models.list()
                     
                     # If we get here, the key works
-                    lm = dspy.LM(
-                        model='gpt-4',
-                        api_key=openai_key,
-                        max_tokens=2000,
-                        temperature=0.7
-                    )
-                    dspy.settings.configure(lm=lm)
+                    if USE_DSPY:
+                        lm = dspy.LM(
+                            model='gpt-4',
+                            api_key=openai_key,
+                            max_tokens=2000,
+                            temperature=0.7
+                        )
+                        dspy.settings.configure(lm=lm)
                     logger.info("DSPy configured with OpenAI GPT-4")
                     logger.warning("⚠️  Privacy Mode: CLOUD INFERENCE (OpenAI)")
                     return True
@@ -191,7 +219,8 @@ class SyntheticDataGenerator:
                     return self()
             
             mock_lm = MockLM()
-            dspy.settings.configure(lm=mock_lm)
+            if USE_DSPY:
+                dspy.settings.configure(lm=mock_lm)
             logger.info("DSPy configured with fallback mock LM")
             logger.info("🧪 Testing Mode: MOCK GENERATION")
             return False
@@ -199,64 +228,125 @@ class SyntheticDataGenerator:
             logger.error(f"Failed to configure mock LM: {e}")
             return False
     
-    def _load_healthcare_knowledge(self) -> Dict[str, Any]:
-        """Load healthcare domain knowledge and patterns."""
-        return {
-            "common_conditions": [
-                {"icd10": "E11.9", "name": "Type 2 diabetes mellitus without complications", "prevalence": 0.08},
-                {"icd10": "I10", "name": "Essential hypertension", "prevalence": 0.12},
-                {"icd10": "Z51.11", "name": "Encounter for antineoplastic chemotherapy", "prevalence": 0.03},
-                {"icd10": "M79.18", "name": "Myalgia, other site", "prevalence": 0.05},
-                {"icd10": "K21.9", "name": "Gastro-esophageal reflux disease without esophagitis", "prevalence": 0.04}
-            ],
-            "medication_patterns": {
-                "diabetes": ["metformin", "insulin", "glipizide"],
-                "hypertension": ["lisinopril", "amlodipine", "hydrochlorothiazide"],
-                "hyperlipidemia": ["atorvastatin", "simvastatin", "rosuvastatin"]
-            },
-            "age_condition_correlation": {
-                "18-34": ["anxiety", "depression", "reproductive_health"],
-                "35-54": ["diabetes", "hypertension", "metabolic_syndrome"],
-                "55-74": ["cardiovascular", "diabetes", "arthritis"],
-                "75+": ["multiple_chronic", "cognitive_decline", "frailty"]
-            },
-            "geographic_patterns": {
-                "rural": {"diabetes": 1.2, "obesity": 1.3, "mental_health": 0.8},
-                "urban": {"asthma": 1.4, "infectious_disease": 1.1, "trauma": 1.3},
-                "suburban": {"allergies": 1.2, "lifestyle_diseases": 1.1}
-            }
+    async def learn_from_data(
+        self,
+        data_samples: Union[List[Dict], pd.DataFrame],
+        domain: str = "custom"
+    ) -> str:
+        """
+        Learn patterns from user-provided real data.
+        
+        Args:
+            data_samples: Real data samples to learn from
+            domain: Domain category (healthcare, finance, custom)
+            
+        Returns:
+            Pattern ID for future generation
+        """
+        import pandas as pd
+        
+        # Learn patterns using the pattern analyzer
+        pattern_summary = self.pattern_analyzer.generate_pattern_summary(data_samples)
+        
+        # Store in knowledge loader
+        knowledge = self.knowledge_loader.load_from_samples(data_samples, domain)
+        
+        # Generate unique pattern ID
+        pattern_id = f"pattern_{domain}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Store the learned pattern
+        self.learned_patterns[pattern_id] = {
+            "domain": domain,
+            "pattern_summary": pattern_summary,
+            "knowledge": knowledge,
+            "sample_count": len(data_samples) if isinstance(data_samples, list) else len(data_samples)
         }
-    
-    def _load_finance_knowledge(self) -> Dict[str, Any]:
-        """Load finance domain knowledge and patterns."""
+        
+        # Update domain knowledge
+        if domain == "healthcare":
+            self.healthcare_knowledge = knowledge
+        elif domain == "finance":
+            self.finance_knowledge = knowledge
+            
+        logger.info(f"Learned patterns from {len(data_samples)} samples, pattern ID: {pattern_id}")
+        return pattern_id
+        
+    async def generate_from_pattern(
+        self,
+        pattern_id: str,
+        record_count: int,
+        variation: float = 0.3,
+        privacy_level: PrivacyLevel = PrivacyLevel.MEDIUM
+    ) -> Dict[str, Any]:
+        """
+        Generate synthetic data based on previously learned patterns.
+        
+        Args:
+            pattern_id: ID of the learned pattern
+            record_count: Number of records to generate
+            variation: Amount of variation (0.0-1.0)
+            privacy_level: Privacy protection level
+            
+        Returns:
+            Generated synthetic dataset
+        """
+        if pattern_id not in self.learned_patterns:
+            raise ValueError(f"Pattern ID {pattern_id} not found")
+            
+        pattern_info = self.learned_patterns[pattern_id]
+        pattern_summary = pattern_info["pattern_summary"]
+        knowledge = pattern_info["knowledge"]
+        
+        # Generate data based on learned patterns
+        synthetic_data = []
+        
+        for i in range(record_count):
+            record = {}
+            
+            # Generate each field based on learned distributions
+            for col_name, distribution in pattern_summary.get("distributions", {}).items():
+                if distribution.get("type") == "numeric":
+                    # Generate numeric value based on learned distribution
+                    mean = distribution.get("mean", 0)
+                    std = distribution.get("std", 1) * variation
+                    value = np.random.normal(mean, std)
+                    record[col_name] = float(value)
+                    
+                elif distribution.get("type") == "categorical":
+                    # Generate categorical value based on learned frequencies
+                    frequencies = distribution.get("frequencies", {})
+                    if frequencies:
+                        values = list(frequencies.keys())
+                        probabilities = list(frequencies.values())
+                        value = np.random.choice(values, p=probabilities)
+                        record[col_name] = value
+                    else:
+                        record[col_name] = f"synthetic_{i}"
+                        
+                elif distribution.get("type") == "temporal":
+                    # Generate temporal value based on learned patterns
+                    min_date = distribution.get("min_date", datetime.now())
+                    max_date = distribution.get("max_date", datetime.now())
+                    record[col_name] = self.faker.date_time_between(
+                        start_date=min_date, 
+                        end_date=max_date
+                    ).isoformat()
+                    
+                else:
+                    # Default generation
+                    record[col_name] = self.faker.text(max_nb_chars=50)
+                    
+            synthetic_data.append(record)
+            
         return {
-            "spending_patterns": {
-                "age_groups": {
-                    "18-24": {"entertainment": 0.15, "food": 0.25, "transportation": 0.20},
-                    "25-34": {"housing": 0.35, "food": 0.18, "transportation": 0.15},
-                    "35-54": {"housing": 0.30, "family": 0.20, "transportation": 0.15},
-                    "55+": {"healthcare": 0.18, "housing": 0.25, "travel": 0.12}
-                },
-                "seasonal": {
-                    "Q1": {"taxes": 1.5, "healthcare": 1.2, "utilities": 1.3},
-                    "Q2": {"travel": 1.4, "home_improvement": 1.3},
-                    "Q3": {"education": 1.8, "clothing": 1.2},
-                    "Q4": {"gifts": 2.0, "travel": 1.6, "entertainment": 1.4}
-                }
-            },
-            "fraud_patterns": {
-                "high_risk_categories": ["online", "gas_stations", "restaurants"],
-                "time_patterns": {"late_night": 2.1, "weekends": 1.3, "holidays": 1.5},
-                "amount_patterns": {"small_test": "<$5", "medium_fraud": "$50-500", "large_fraud": ">$1000"}
-            },
-            "credit_patterns": {
-                "score_ranges": {
-                    "300-579": {"default_rate": 0.28, "approval_rate": 0.15},
-                    "580-669": {"default_rate": 0.12, "approval_rate": 0.45},
-                    "670-739": {"default_rate": 0.06, "approval_rate": 0.75},
-                    "740-799": {"default_rate": 0.03, "approval_rate": 0.90},
-                    "800-850": {"default_rate": 0.01, "approval_rate": 0.95}
-                }
+            "success": True,
+            "pattern_id": pattern_id,
+            "records_generated": record_count,
+            "data": synthetic_data,
+            "metadata": {
+                "variation": variation,
+                "privacy_level": privacy_level.value,
+                "generated_at": datetime.now().isoformat()
             }
         }
     
