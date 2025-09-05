@@ -45,7 +45,8 @@ class DataIngestionPipeline:
         format: str = 'auto',
         anonymize: bool = True,
         learn_patterns: bool = True,
-        sample_size: Optional[int] = None
+        sample_size: Optional[int] = None,
+        credit_card_provider: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Ingest data from various sources and learn patterns.
@@ -56,6 +57,8 @@ class DataIngestionPipeline:
             anonymize: Whether to anonymize PII before analysis
             learn_patterns: Whether to extract patterns from data
             sample_size: Optional sample size for large datasets
+            credit_card_provider: Optional credit card provider for test numbers
+                                 (visa, mastercard, amex, discover, etc.)
             
         Returns:
             Ingestion result with patterns and metadata
@@ -83,7 +86,7 @@ class DataIngestionPipeline:
             # Detect and optionally anonymize PII
             pii_report = None
             if anonymize:
-                df, pii_report = await self._anonymize_data(df)
+                df, pii_report = await self._anonymize_data(df, credit_card_provider)
                 
             # Learn patterns if requested
             patterns = None
@@ -233,7 +236,7 @@ class DataIngestionPipeline:
             random.seed(42)
             return random.sample(data, min(sample_size, len(data)))
             
-    async def _anonymize_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    async def _anonymize_data(self, df: pd.DataFrame, credit_card_provider: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
         Anonymize PII in the data.
         
@@ -266,6 +269,9 @@ class DataIngestionPipeline:
                 elif 'ssn' in col.lower() or 'social' in col.lower():
                     anonymized_df[col] = self._anonymize_ssn(df[col])
                     pii_report["anonymization_applied"][col] = "ssn_mask"
+                elif 'credit' in col.lower() or 'card' in col.lower():
+                    anonymized_df[col] = self._anonymize_credit_card(df[col], credit_card_provider)
+                    pii_report["anonymization_applied"][col] = "credit_card_test_numbers"
                 elif 'name' in col.lower():
                     anonymized_df[col] = self._anonymize_name(df[col])
                     pii_report["anonymization_applied"][col] = "name_generalize"
@@ -315,9 +321,10 @@ class DataIngestionPipeline:
         def hash_email(email):
             if pd.isna(email):
                 return email
-            local, domain = email.split('@') if '@' in email else (email, 'example.com')
-            hashed = hashlib.md5(local.encode()).hexdigest()[:8]
-            return f"user_{hashed}@{domain}"
+            # Hash the entire email to prevent domain leakage
+            full_hash = hashlib.md5(str(email).encode()).hexdigest()[:8]
+            # Use generic domain to prevent information leakage
+            return f"user_{full_hash}@example.com"
         return series.apply(hash_email)
         
     def _anonymize_phone(self, series: pd.Series) -> pd.Series:
@@ -342,6 +349,84 @@ class DataIngestionPipeline:
     def _anonymize_address(self, series: pd.Series) -> pd.Series:
         """Anonymize addresses."""
         return series.apply(lambda x: "Address_Redacted" if pd.notna(x) else x)
+    
+    def _anonymize_credit_card(self, series: pd.Series, provider: Optional[str] = None) -> pd.Series:
+        """
+        Anonymize credit card numbers using test card numbers from various providers.
+        
+        Args:
+            series: Series containing credit card numbers
+            provider: Optional specific provider to use (visa, mastercard, amex, etc.)
+        """
+        import random
+        
+        # Official test card numbers from various providers
+        # These are publicly documented test numbers that will never work in production
+        test_cards = {
+            'visa': [
+                '4242-4242-4242-4242',  # Stripe test card
+                '4111-1111-1111-1111',  # Common test card
+                '4012-8888-8888-1881',  # Visa test
+                '4000-0566-5566-5556',  # Visa debit
+            ],
+            'mastercard': [
+                '5555-5555-5555-4444',  # Mastercard test
+                '5200-8282-8282-8210',  # Mastercard debit
+                '5105-1051-0510-5100',  # Mastercard prepaid
+                '2223-0031-2200-3222',  # Mastercard 2-series
+            ],
+            'amex': [
+                '3782-822463-10005',   # AmEx test
+                '3714-496353-98431',   # AmEx test
+                '3787-344936-21000',   # AmEx corporate
+            ],
+            'discover': [
+                '6011-1111-1111-1117',  # Discover test
+                '6011-0009-9013-9424',  # Discover test
+                '6011-5012-3456-7890',  # Discover test
+            ],
+            'diners': [
+                '3056-930902-5904',     # Diners Club
+                '3600-666666-6666',     # Diners test
+            ],
+            'jcb': [
+                '3530-1113-3330-0000',  # JCB test
+                '3566-0020-2036-0505',  # JCB test
+            ],
+            'unionpay': [
+                '6200-0000-0000-0005',  # UnionPay test
+                '6250-9470-0000-0016',  # UnionPay debit
+            ]
+        }
+        
+        def get_test_card(card_value):
+            if pd.isna(card_value):
+                return card_value
+            
+            # If a specific provider is requested
+            if provider and provider.lower() in test_cards:
+                return random.choice(test_cards[provider.lower()])
+            
+            # Otherwise, select from all providers with weighted distribution
+            # Visa and Mastercard are more common
+            provider_weights = {
+                'visa': 0.4,
+                'mastercard': 0.3,
+                'amex': 0.1,
+                'discover': 0.1,
+                'diners': 0.03,
+                'jcb': 0.03,
+                'unionpay': 0.04
+            }
+            
+            selected_provider = random.choices(
+                list(provider_weights.keys()),
+                weights=list(provider_weights.values())
+            )[0]
+            
+            return random.choice(test_cards[selected_provider])
+        
+        return series.apply(get_test_card)
         
     def _anonymize_dob(self, series: pd.Series) -> pd.Series:
         """Anonymize date of birth to year only."""

@@ -6,12 +6,14 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 <img align="right" width="300" height="300" alt="synthetic-data-mcp" src="https://github.com/user-attachments/assets/46620579-0933-4d55-82e9-3700c75fe566" />
 
 ### Core Capabilities
+- **Privacy-First Local Inference**: Ollama integration for 100% local data generation
 - **Domain-Specific Generation**: Specialized synthetic data for healthcare and finance
 - **Privacy Protection**: Differential privacy, k-anonymity, l-diversity
+- **PII Safety Guarantee**: Never retains or outputs original personal data
 - **Compliance Validation**: HIPAA, PCI DSS, SOX, GDPR compliance checking
 - **Statistical Fidelity**: Advanced validation to ensure data utility
 - **Audit Trail**: Comprehensive logging for regulatory compliance
-- **Multi-Provider Support**: OpenAI, Anthropic, Google, OpenRouter, and local models
+- **Multi-Provider Support**: Ollama (default), OpenAI, Anthropic, Google, OpenRouter
 
 ### LLM Provider Support (2025 Models)
 - **OpenAI**: GPT-5, GPT-5 Mini/Nano, GPT-4o, GPT-Realtime (speech-to-speech)
@@ -99,12 +101,15 @@ export OPENROUTER_API_KEY="sk-or-your-key-here"
 export OPENROUTER_MODEL="meta-llama/llama-3.1-8b-instruct"
 ```
 
-#### Local Models (Ollama) - Privacy-First
+#### Local Models (Ollama) - Privacy-First (DEFAULT)
 ```bash
 # Install Ollama first: https://ollama.ai
-ollama pull llama3.1:8b
+ollama pull mistral-small:latest  # Or any preferred model
 export OLLAMA_BASE_URL="http://localhost:11434"
-export OLLAMA_MODEL="llama3.1:8b"
+export OLLAMA_MODEL="mistral-small:latest"
+
+# The system automatically detects and uses Ollama if available
+# No API keys required for local inference!
 ```
 
 ### 2. Start the MCP Server
@@ -235,11 +240,39 @@ Performance and utility benchmarking against real data.
 
 ## 🔒 Privacy Protection
 
+### Core Privacy Features
 - **Differential Privacy**: Configurable ε values (0.1-1.0)
 - **Statistical Disclosure Control**: k-anonymity, l-diversity, t-closeness
 - **Synthetic Data Indistinguishability**: Provable privacy guarantees
 - **Re-identification Risk Assessment**: Continuous monitoring
 - **Privacy Budget Management**: Automatic composition tracking
+
+### PII Protection Guarantee
+- **NO Data Retention**: Original personal data is NEVER stored
+- **Automatic PII Detection**: Identifies names, emails, SSNs, phones, addresses, credit cards
+- **Complete Anonymization**: All PII is anonymized before pattern learning
+- **Statistical Learning Only**: Only learns distributions, means, and frequencies
+- **100% Synthetic Output**: Generated data is completely fake
+
+### Credit Card Safety
+- **Test Card Numbers Only**: Uses official test cards (4242-4242-4242-4242, etc.)
+- **Provider Support**: Visa, Mastercard, AmEx, Discover, and more
+- **Configurable Providers**: Specify provider or use weighted distribution
+- **Never Real Cards**: Original credit card numbers are never retained or output
+
+Example usage with credit card provider selection:
+```python
+# Use specific provider test cards
+result = await pipeline.ingest(
+    source=data,
+    credit_card_provider='visa'  # Uses Visa test cards
+)
+
+# Or let system use mixed providers (default)
+result = await pipeline.ingest(
+    source=data  # Automatically uses weighted distribution
+)
+```
 
 ## 📊 Performance & Quality
 

@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Synthetic Data MCP Server - Enterprise-grade Model Context Protocol server for generating privacy-compliant synthetic datasets for regulated industries (healthcare, finance) with multiple LLM provider support.
+Synthetic Data MCP Server - Enterprise-grade Model Context Protocol server for generating privacy-compliant synthetic datasets for regulated industries (healthcare, finance) with multiple LLM provider support. 
+
+**Primary Features:**
+- Ollama integration for 100% local, privacy-first inference (no API keys required)
+- Complete PII protection - never retains or outputs original personal data
+- Test credit card numbers for safe financial data generation
+- DSPy orchestration with automatic provider fallback
 
 ## Key Commands
 
@@ -81,12 +87,17 @@ Test fixtures and mocks are in `tests/conftest.py`. Provider tests use mock resp
 ## LLM Provider Configuration
 
 Priority order (automatically selected):
-1. Local Ollama (privacy-first, no costs)
-2. OpenAI (best performance)
+1. **Local Ollama** (DEFAULT - privacy-first, no costs, no API keys)
+2. OpenAI (best performance when Ollama unavailable)
 3. Anthropic Claude (reasoning)
 4. Google Gemini (cost-effective)
 5. OpenRouter (open models)
-6. Fallback mock (testing)
+
+**Ollama Configuration (Primary Provider):**
+- Auto-detects Ollama at `http://localhost:11434`
+- Automatically selects best available model (e.g., mistral-small)
+- No configuration needed if Ollama is running
+- 100% local inference, data never leaves machine
 
 Set environment variables for providers:
 - `OPENAI_API_KEY`
