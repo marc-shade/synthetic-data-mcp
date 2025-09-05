@@ -177,7 +177,7 @@ class GenerateFromPatternRequest(BaseModel):
     pattern_id: str = Field(description="ID from previous ingestion")
     record_count: int = Field(description="Number of records to generate", gt=0, le=1000000)
     variation: float = Field(description="Amount of variation (0.0-1.0)", default=0.3, ge=0.0, le=1.0)
-    privacy_level: PrivacyLevel = Field(description="Privacy protection level", default=PrivacyLevel.BALANCED)
+    privacy_level: PrivacyLevel = Field(description="Privacy protection level", default=PrivacyLevel.MEDIUM)
     preserve_distributions: bool = Field(description="Maintain statistical properties", default=True)
 
 

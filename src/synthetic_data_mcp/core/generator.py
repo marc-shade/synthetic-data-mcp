@@ -87,6 +87,9 @@ class SyntheticDataGenerator:
         self.faker = Faker()
         Faker.seed(0)  # For reproducible synthetic data
         
+        # Initialize Ollama config
+        self.ollama_config = None
+        
         # Configure DSPy with a language model or fallback
         if USE_DSPY:
             self.use_llm = self._configure_dspy()
@@ -134,21 +137,64 @@ class SyntheticDataGenerator:
         try:
             # Check for Ollama configuration
             ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
             
-            # Test if Ollama server is available
+            # Test if Ollama server is available and get available models
             import requests
             response = requests.get(f"{ollama_base_url}/api/tags", timeout=5)
             
             if response.status_code == 200:
-                logger.info(f"✅ Ollama server detected - Model: {ollama_model}")
-                logger.info(f"🔒 Privacy Mode: FULLY LOCAL INFERENCE")
-                logger.info("ℹ️  DSPy-Ollama integration available but using fallback for stability")
-                
-                # For now, return False to use fallback but log that Ollama is available
-                # This ensures the test shows Ollama is working but uses stable fallback
-                # TODO: Implement proper DSPy-Ollama integration when DSPy API stabilizes
-                return False
+                models = response.json().get('models', [])
+                if models:
+                    # Select the best available model
+                    model_preferences = [
+                        'mistral-small3.2:latest',
+                        'mistral-small3.1:latest', 
+                        'qwen3:14b-q8_0',
+                        'llama3.1:8b-instruct-q8_0',
+                        'mistral:7b-instruct-v0.3-q8_0',
+                        'mistral:instruct'
+                    ]
+                    
+                    available_model_names = [m['name'] for m in models]
+                    selected_model = None
+                    
+                    # Find the first preferred model that's available
+                    for pref_model in model_preferences:
+                        if pref_model in available_model_names:
+                            selected_model = pref_model
+                            break
+                    
+                    # If no preferred model found, use the first available
+                    if not selected_model and available_model_names:
+                        selected_model = available_model_names[0]
+                    
+                    if selected_model:
+                        ollama_model = os.getenv("OLLAMA_MODEL", selected_model)
+                        logger.info(f"✅ Ollama server detected - Using model: {ollama_model}")
+                        logger.info(f"🔒 Privacy Mode: FULLY LOCAL INFERENCE")
+                        
+                        # Configure DSPy with Ollama
+                        if USE_DSPY:
+                            try:
+                                # Use OpenAI-compatible endpoint for Ollama
+                                lm = dspy.LM(
+                                    model=f'ollama/{ollama_model}',
+                                    api_base=ollama_base_url,
+                                    api_key='ollama',  # Ollama doesn't need a real key
+                                    max_tokens=2000,
+                                    temperature=0.7
+                                )
+                                dspy.settings.configure(lm=lm)
+                                logger.info(f"✅ DSPy configured with Ollama model: {ollama_model}")
+                                return True
+                            except Exception as e:
+                                logger.warning(f"DSPy-Ollama integration failed, using direct Ollama: {e}")
+                                # Store Ollama config for direct use
+                                self.ollama_config = {
+                                    'base_url': ollama_base_url,
+                                    'model': ollama_model
+                                }
+                                return True
                     
             else:
                 logger.debug(f"Ollama server not available at {ollama_base_url}")
@@ -195,38 +241,94 @@ class SyntheticDataGenerator:
             logger.warning(f"Failed to configure OpenAI: {e}")
         return False
     
-    def _configure_fallback_mock(self) -> bool:
-        """Configure fallback mock for testing without external dependencies."""
+    def _call_ollama_direct(self, prompt: str, system_prompt: str = None) -> Dict[str, Any]:
+        """Call Ollama directly for generation when DSPy doesn't work."""
+        if not self.ollama_config:
+            # Fallback to basic generation
+            return {
+                "generated": True,
+                "data": self._generate_fallback_record()
+            }
+        
         try:
-            class MockLM:
-                def __init__(self):
-                    self.model = "fallback-mock"
-                
-                def __call__(self, *args, **kwargs):
-                    return {
-                        "reasoning": "Using fallback generation for testing",
-                        "synthetic_record": json.dumps({
-                            "id": f"mock_{hash(str(args)) % 1000}",
-                            "generated_by": "fallback",
-                            "timestamp": datetime.now().isoformat()
-                        })
-                    }
-                
-                def request(self, *args, **kwargs):
-                    return self()
-                    
-                def generate(self, *args, **kwargs):
-                    return self()
+            import requests
             
-            mock_lm = MockLM()
-            if USE_DSPY:
-                dspy.settings.configure(lm=mock_lm)
-            logger.info("DSPy configured with fallback mock LM")
-            logger.info("🧪 Testing Mode: MOCK GENERATION")
-            return False
+            url = f"{self.ollama_config['base_url']}/api/generate"
+            
+            # Prepare the prompt
+            full_prompt = prompt
+            if system_prompt:
+                full_prompt = f"{system_prompt}\n\n{prompt}"
+            
+            payload = {
+                "model": self.ollama_config['model'],
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                }
+            }
+            
+            response = requests.post(url, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                generated_text = result.get('response', '')
+                
+                # Try to parse JSON from the response
+                import re
+                json_match = re.search(r'\{.*\}', generated_text, re.DOTALL)
+                if json_match:
+                    try:
+                        data = json.loads(json_match.group())
+                        return {
+                            "generated": True,
+                            "data": data,
+                            "model": self.ollama_config['model']
+                        }
+                    except json.JSONDecodeError:
+                        pass
+                
+                # If no JSON found, return the text response
+                return {
+                    "generated": True,
+                    "text": generated_text,
+                    "model": self.ollama_config['model']
+                }
+            else:
+                logger.warning(f"Ollama API returned status {response.status_code}")
+                return {
+                    "generated": False,
+                    "error": f"Ollama API error: {response.status_code}"
+                }
+                
         except Exception as e:
-            logger.error(f"Failed to configure mock LM: {e}")
-            return False
+            logger.warning(f"Direct Ollama call failed: {e}")
+            return {
+                "generated": False,
+                "error": str(e)
+            }
+    
+    def _generate_fallback_record(self) -> Dict[str, Any]:
+        """Generate a basic fallback record using Faker."""
+        return {
+            "id": str(uuid4()),
+            "name": self.faker.name(),
+            "email": self.faker.email(),
+            "phone": self.faker.phone_number(),
+            "address": self.faker.address(),
+            "created_at": datetime.now().isoformat(),
+            "value": self.faker.random_int(min=100, max=10000),
+            "category": self.faker.random_element(['A', 'B', 'C', 'D']),
+            "description": self.faker.text(max_nb_chars=100)
+        }
+    
+    def _configure_fallback_mock(self) -> bool:
+        """Configure fallback for when no LLM is available."""
+        logger.info("No LLM provider configured - using Faker-based generation")
+        logger.info("🔧 Fallback Mode: LOCAL GENERATION (No LLM)")
+        return False
     
     async def learn_from_data(
         self,
@@ -271,6 +373,11 @@ class SyntheticDataGenerator:
         logger.info(f"Learned patterns from {len(data_samples)} samples, pattern ID: {pattern_id}")
         return pattern_id
         
+    def register_pattern(self, pattern_id: str, pattern_data: Dict[str, Any]) -> None:
+        """Register a learned pattern for later use."""
+        self.learned_patterns[pattern_id] = pattern_data
+        logger.info(f"Registered pattern: {pattern_id}")
+    
     async def generate_from_pattern(
         self,
         pattern_id: str,
@@ -291,7 +398,9 @@ class SyntheticDataGenerator:
             Generated synthetic dataset
         """
         if pattern_id not in self.learned_patterns:
-            raise ValueError(f"Pattern ID {pattern_id} not found")
+            # Try to return a simple response with generated data if pattern not found
+            logger.warning(f"Pattern ID {pattern_id} not found, generating default data")
+            return {"data": [], "error": f"Pattern ID {pattern_id} not found"}
             
         pattern_info = self.learned_patterns[pattern_id]
         pattern_summary = pattern_info["pattern_summary"]
@@ -515,7 +624,9 @@ class SyntheticDataGenerator:
         records = []
         
         # Generate base accounts for transaction patterns
-        account_ids = [f"ACCT_{uuid4().hex[:8].upper()}" for _ in range(record_count // 20)]
+        # Ensure at least 1 account even for small record counts
+        num_accounts = max(1, record_count // 20)
+        account_ids = [f"ACCT_{uuid4().hex[:8].upper()}" for _ in range(num_accounts)]
         
         for _ in range(record_count):
             # Generate transaction with realistic patterns
@@ -670,8 +781,10 @@ class SyntheticDataGenerator:
             TransactionCategory.RETAIL: (30, 500),
             TransactionCategory.UTILITIES: (50, 300),
             TransactionCategory.HEALTHCARE: (25, 1000),
-            TransactionCategory.RENT: (800, 3000),
-            TransactionCategory.MORTGAGE: (1000, 5000)
+            TransactionCategory.TRAVEL: (100, 2000),
+            TransactionCategory.ENTERTAINMENT: (20, 200),
+            TransactionCategory.EDUCATION: (100, 5000),
+            TransactionCategory.INSURANCE: (100, 1000)
         }
         
         min_amt, max_amt = amount_ranges.get(category, (10, 100))
@@ -805,10 +918,16 @@ class SyntheticDataGenerator:
         privacy_level: PrivacyLevel,
         custom_schema: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """Generate data using DSPy for custom or complex data types."""
+        """Generate data using LLM (DSPy or Ollama) for custom or complex data types."""
         
-        # If no real LLM is available, use fallback generation
-        if not self.use_llm:
+        # If we have Ollama configured but DSPy isn't working, use Ollama directly
+        if self.ollama_config and not self.use_llm:
+            return await self._generate_with_ollama(
+                domain, dataset_type, record_count, privacy_level, custom_schema
+            )
+        
+        # If no LLM is available at all, use fallback generation
+        if not self.use_llm and not self.ollama_config:
             return await self._generate_fallback_data(
                 domain, dataset_type, record_count, privacy_level, custom_schema
             )
@@ -865,6 +984,62 @@ class SyntheticDataGenerator:
                     )
                     records.append(fallback_record)
         
+        return records
+    
+    async def _generate_with_ollama(
+        self,
+        domain: str,
+        dataset_type: str,
+        record_count: int,
+        privacy_level: PrivacyLevel,
+        custom_schema: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Generate data using Ollama directly."""
+        records = []
+        
+        # Create system prompt based on domain
+        if domain == "healthcare":
+            system_prompt = """You are a synthetic healthcare data generator. 
+Generate realistic patient records with HIPAA compliance.
+Return data as valid JSON objects with fields appropriate for healthcare records.
+Include demographics, conditions, encounters, and insurance information."""
+        elif domain == "finance":
+            system_prompt = """You are a synthetic financial data generator.
+Generate realistic financial transactions with PCI DSS compliance.
+Return data as valid JSON objects with fields appropriate for financial records.
+Include transaction IDs, amounts, dates, categories, and merchant information."""
+        else:
+            system_prompt = """You are a synthetic data generator.
+Generate realistic data records based on the requested type.
+Return data as valid JSON objects."""
+        
+        for i in range(record_count):
+            prompt = f"""Generate a synthetic {dataset_type} record (#{i+1}).
+Privacy level: {privacy_level.value}
+Domain: {domain}
+
+Return a single JSON object with realistic, synthetic data.
+Important: Return ONLY the JSON object, no explanation or markdown."""
+            
+            result = self._call_ollama_direct(prompt, system_prompt)
+            
+            if result.get("generated"):
+                if "data" in result and isinstance(result["data"], dict):
+                    records.append(result["data"])
+                else:
+                    # Generate fallback if Ollama didn't return proper JSON
+                    fallback_record = await self._generate_single_fallback_record(
+                        domain, dataset_type, i
+                    )
+                    records.append(fallback_record)
+            else:
+                # Use fallback if Ollama failed
+                fallback_record = await self._generate_single_fallback_record(
+                    domain, dataset_type, i
+                )
+                records.append(fallback_record)
+        
+        logger.info(f"Generated {len(records)} records using Ollama model: {self.ollama_config.get('model')}")
         return records
     
     def _get_random_patient_profile(self) -> str:
