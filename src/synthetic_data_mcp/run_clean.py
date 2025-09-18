@@ -99,14 +99,23 @@ def safe_open(file, *args, **kwargs):
     return original_open(file, *args, **kwargs)
 builtins.open = safe_open
 
+# Monkey patch print to prevent ANY print statements during import
+original_print = builtins.print
+def safe_print(*args, **kwargs):
+    # Completely suppress all print statements
+    pass
+builtins.print = safe_print
+
 # Now import the server (with stderr still suppressed)
 try:
     from synthetic_data_mcp.server import app
-    # Restore stderr after imports
+    # Restore stderr and print after imports
     sys.stderr = original_stderr
+    builtins.print = original_print
 except Exception as e:
-    # Restore stderr to report critical errors
+    # Restore stderr and print to report critical errors
     sys.stderr = original_stderr
+    builtins.print = original_print
     sys.stderr.write(f"Critical error: {e}\n")
     sys.exit(1)
 

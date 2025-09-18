@@ -14,7 +14,7 @@ from .redshift import RedshiftConnector
 # TODO: Fix aioredis compatibility or replace with redis-py
 RedisConnector = None
 REDIS_AVAILABLE = False
-print("Warning: Redis connector disabled due to aioredis compatibility issues with Python 3.12")
+# Warning: Redis connector disabled due to aioredis compatibility issues with Python 3.12
 
 __all__ = [
     'PostgreSQLConnector',

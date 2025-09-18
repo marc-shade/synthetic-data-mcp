@@ -1,6 +1,6 @@
 [project]
 name = "synthetic-data-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "Domain-specific synthetic data generation MCP server for healthcare and finance compliance"
 readme = "README.md"
 requires-python = ">=3.10"
