@@ -2,7 +2,7 @@
 
 Enterprise-grade Model Context Protocol (MCP) server for generating privacy-compliant synthetic datasets. Built for regulated industries requiring HIPAA, PCI DSS, SOX, and GDPR compliance with multiple LLM provider support.
 
-## 🚀 Features
+## Features
 <img align="right" width="300" height="300" alt="synthetic-data-mcp" src="https://github.com/user-attachments/assets/46620579-0933-4d55-82e9-3700c75fe566" />
 
 ### Core Capabilities
@@ -33,7 +33,7 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - **Redis & DiskCache**: Multi-tier caching for cost optimization
 - **Rich**: Beautiful terminal interfaces and progress indicators
 
-## 🎯 Enterprise Benefits
+## Enterprise Benefits
 
 - **Privacy-First**: Generate synthetic data without exposing sensitive information
 - **Compliance-Ready**: Built-in validation for HIPAA, PCI DSS, SOX, and GDPR
@@ -42,7 +42,7 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - **Zero Vendor Lock-in**: Switch between providers seamlessly
 - **Cost Control**: Use local models for unlimited generation
 
-## 🏥 Healthcare Use Cases
+## Healthcare Use Cases
 
 - Patient record synthesis with HIPAA Safe Harbor compliance
 - Clinical trial data generation for FDA submissions
@@ -51,7 +51,7 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - Healthcare analytics and ML model training
 - EHR system testing and validation
 
-## 💰 Finance Use Cases
+## Finance Use Cases
 
 - Transaction pattern modeling for fraud detection
 - Credit risk assessment dataset generation
@@ -60,7 +60,7 @@ Enterprise-grade Model Context Protocol (MCP) server for generating privacy-comp
 - Trading algorithm development and backtesting
 - Financial reporting system validation
 
-## 🛠️ Installation
+## Installation
 
 ### Production Installation
 ```bash
@@ -74,7 +74,7 @@ cd synthetic-data-mcp
 pip install -e ".[dev,healthcare,finance]"
 ```
 
-## 🎯 Quick Start
+## Quick Start
 
 ### 1. Configure LLM Provider
 
@@ -151,7 +151,7 @@ result = await client.call_tool(
 )
 ```
 
-## 🏗️ Provider Configuration
+## Provider Configuration
 
 ### Priority-Based Provider Selection
 
@@ -196,7 +196,7 @@ OLLAMA_MODEL="llama3.1:8b"  # or any installed model
 # - and 20+ more models
 ```
 
-## 🔧 Available MCP Tools
+## Available MCP Tools
 
 ### `generate_synthetic_dataset`
 Generate domain-specific synthetic datasets with compliance validation.
@@ -222,7 +222,7 @@ Create Pydantic schemas for domain-specific data structures.
 ### `benchmark_synthetic_data`
 Performance and utility benchmarking against real data.
 
-## 📋 Compliance Frameworks
+## Compliance Frameworks
 
 ### Healthcare Compliance
 - **HIPAA Safe Harbor**: Automatic validation of 18 identifiers
@@ -238,7 +238,7 @@ Performance and utility benchmarking against real data.
 - **MiFID II**: Markets in Financial Instruments Directive
 - **Dodd-Frank**: Financial reform regulations
 
-## 🔒 Privacy Protection
+## Privacy Protection
 
 ### Core Privacy Features
 - **Differential Privacy**: Configurable ε values (0.1-1.0)
@@ -274,7 +274,7 @@ result = await pipeline.ingest(
 )
 ```
 
-## 📊 Performance & Quality
+## Performance & Quality
 
 - **Statistical Fidelity**: 95%+ correlation preservation
 - **Privacy Preservation**: <1% re-identification risk
@@ -292,7 +292,7 @@ result = await pipeline.ingest(
 | Gemini Pro | 50-200 | Good | Medium | $ |
 | OpenRouter | 10-100 | Variable | Medium | $ |
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -311,7 +311,7 @@ pytest --cov=synthetic_data_mcp --cov-report=html
 OPENAI_API_KEY=sk-test pytest -m integration
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Docker Deployment
 ```bash
@@ -372,7 +372,7 @@ mypy src
 3. Add configuration in `core/generator.py`
 4. Add tests in `tests/test_providers.py`
 
-## 📚 Examples
+## Examples
 
 ### Healthcare Example
 ```python
@@ -414,7 +414,7 @@ async def generate_transactions():
     return result
 ```
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
@@ -428,17 +428,17 @@ pip install -e ".[dev,healthcare,finance]"
 pre-commit install
 ```
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## Support
 
 - [GitHub Issues](https://github.com/marc-shade/synthetic-data-mcp/issues)
 - [GitHub Discussions](https://github.com/marc-shade/synthetic-data-mcp/discussions)
 - Email: support@2acrestudios.com
 
-## 🔗 Related Projects
+## Related Projects
 
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - [DSPy Framework](https://dspy-docs.vercel.app/)
